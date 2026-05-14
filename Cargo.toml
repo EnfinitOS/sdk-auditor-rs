@@ -3,8 +3,14 @@ name = "enfinitos-sdk-auditor"
 version = "0.0.1"
 edition = "2021"
 description = "EnfinitOS Auditor / Verifier SDK (Rust) — cryptographic verification library that regulators, auditors, courts, and third parties use to verify signed proof packs issued by EnfinitOS without trusting the vendor. Offline-by-default; verifies Ed25519 signatures, walks the proof hash chain, re-projects metering, and re-computes settlement reconciliation."
-license = "Proprietary"
+license = "MIT"
 authors = ["EnfinitOS"]
+homepage = "https://github.com/enfinitos/auditor"
+repository = "https://github.com/enfinitos/auditor"
+documentation = "https://docs.rs/enfinitos-sdk-auditor"
+readme = "README.md"
+keywords = ["audit", "verification", "proof", "ed25519", "compliance"]
+categories = ["cryptography", "authentication"]
 publish = false
 
 [lib]
