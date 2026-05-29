@@ -12,7 +12,7 @@ documentation = "https://docs.rs/enfinitos-sdk-auditor"
 readme = "README.md"
 keywords = ["audit", "verification", "proof", "ed25519", "compliance"]
 categories = ["cryptography", "authentication"]
-publish = false
+publish = true
 
 [lib]
 name = "enfinitos_auditor"
