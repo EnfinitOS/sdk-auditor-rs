@@ -62,11 +62,16 @@ pub mod metering_audit;
 pub mod proof_chain;
 pub mod proof_pack;
 pub mod settlement_audit;
+pub mod tenant_chain;
 pub mod types;
 
 pub use auditor::Auditor;
 pub use errors::{AuditorError, AuditorErrorCode};
 pub use keys::KeyDirectory;
+pub use tenant_chain::{
+    canonicalise_tenant_chain_link, genesis_chain_tip, verify_tenant_chain,
+    TenantChainedRecord, TENANT_CHAIN_VERSION,
+};
 pub use types::{
     AuditBundle, AuditReasonCode, AuditReport, AuditStep, AuditStepKind, AuditStepStatus,
     ChainAuditReport, EnvelopeVersion, FullAuditReport, KeysSnapshot, MeterRecord,
