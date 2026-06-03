@@ -1,0 +1,32 @@
+[package]
+name = "enfinitos-sdk-auditor"
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.85"
+description = "EnfinitOS Auditor / Verifier SDK (Rust) — cryptographic verification library that regulators, auditors, courts, and third parties use to verify signed proof packs issued by EnfinitOS without trusting the vendor. Offline-by-default; verifies Ed25519 signatures, walks the proof hash chain, re-projects metering, and re-computes settlement reconciliation."
+license = "MIT"
+authors = ["EnfinitOS"]
+homepage = "https://github.com/EnfinitOS/sdk-auditor-rs"
+repository = "https://github.com/EnfinitOS/sdk-auditor-rs"
+documentation = "https://docs.rs/enfinitos-sdk-auditor"
+readme = "README.md"
+keywords = ["audit", "verification", "proof", "ed25519", "compliance"]
+categories = ["cryptography", "authentication"]
+publish = true
+
+[lib]
+name = "enfinitos_auditor"
+path = "src/lib.rs"
+
+[dependencies]
+ed25519-dalek = { version = "2.1", default-features = false, features = ["std"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["serde", "std", "clock"] }
+thiserror = "2.0"
+
+[dev-dependencies]
+ed25519-dalek = { version = "2.1", default-features = false, features = ["std", "rand_core"] }
+rand_core = { version = "0.6", features = ["std", "getrandom"] }
