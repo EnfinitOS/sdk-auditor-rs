@@ -22,7 +22,7 @@ pub type SignatureAlgorithm = String;
 // ---------------------------------------------------------------------
 
 /// One of N public keys the platform may have used to sign records.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationKey {
     #[serde(rename = "keyId")]
     pub key_id: String,
