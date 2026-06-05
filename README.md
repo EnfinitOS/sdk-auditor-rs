@@ -5,12 +5,53 @@ cryptographic verification library that regulators, auditors, courts,
 and third-party compliance tools use to verify signed proof packs
 issued by EnfinitOS, **without having to trust EnfinitOS as a vendor**.
 
-Companion to the reference [`@enfinitos/sdk-auditor`](../auditor-ts/)
-TypeScript implementation and [`enfinitos-sdk-auditor`](../auditor-py/)
+Companion to the reference
+[`@enfinitos/sdk-auditor`](https://github.com/EnfinitOS/sdk-auditor-ts)
+TypeScript implementation and
+[`enfinitos-sdk-auditor`](https://github.com/EnfinitOS/sdk-auditor-py)
 Python implementation. The wire shapes, canonicalisation rules, and
 verification semantics are deliberately identical: a regulator
 auditing the same proof pack with any of the three SDKs MUST get the
 same VALID/INVALID verdict on every step.
+
+## What's new in 0.0.2
+
+**Rights-provenance write-time signature verification.** The platform
+now Ed25519-signs every rights-provenance ledger row at write time
+(basis, right, offer, and challenge lifecycle events); 0.0.2 ships
+the independent verifier:
+
+```rust
+use enfinitos_auditor::{
+    verify_provenance_chain, KeyDirectory, VerifyProvenanceChainOptions,
+};
+
+let directory = KeyDirectory::from_local(pinned_keys)?;
+let report = verify_provenance_chain(
+    &export_archive_records, // Vec<ProvenanceRecord> from /proof/export
+    &directory,
+    &VerifyProvenanceChainOptions {
+        expected_org_id: Some("org_abc".to_string()),
+    },
+);
+report.status;                // Valid | Invalid | Skipped
+report.signed_record_count;   // write-time-signed records
+report.unsigned_record_count; // legacy (pre-write-time) records
+```
+
+Legacy records (pre-write-time signing, `signatureAlgorithm:
+"hmac-sha256"`) surface as informational SKIPPED findings — never
+INVALID — so 0.0.1-era exports keep verifying.
+
+**Upgrade note (Rust-specific):** 0.0.2 widens `SettlementPartyRole`
+to the platform's full 8-role union (`AGENCY`, `AFFILIATE`,
+`RESELLER`, `TAX_AUTHORITY` added). The 0.0.1 crate's strict serde
+enum **rejected at deserialisation** any pack whose settlement lines
+used one of the new roles; 0.0.2 deserialises and verifies them. If
+you audit packs from tenants on counterparty-addressed settlement,
+upgrade. See
+[CHANGELOG.md](https://github.com/EnfinitOS/sdk-auditor-rs/blob/main/CHANGELOG.md)
+for the full release notes.
 
 ## Why Rust?
 
@@ -24,13 +65,13 @@ workflows. The Rust SDK exists to:
    or audit firm replaying millions of proof packs benefits from
    Rust's throughput and zero-allocation hot paths.
 3. **Allow embedding inside an air-gapped audit appliance** — the
-   binary is small, dependency-light (5 crates), and has no FFI.
+   binary is small, dependency-light (7 crates), and has no FFI.
 
 ## The trust model
 
 "Don't trust us — verify". See the
-[TypeScript README](../auditor-ts/README.md#the-trust-model) for the
-full framing. The short version:
+[TypeScript README](https://github.com/EnfinitOS/sdk-auditor-ts#the-trust-model)
+for the full framing. The short version:
 
 1. We Ed25519-sign every record. The public keys are published.
 2. Every proof receipt is hash-chained.
@@ -44,7 +85,7 @@ full framing. The short version:
 
 ```toml
 [dependencies]
-enfinitos-sdk-auditor = "0.0.1"
+enfinitos-sdk-auditor = "0.0.2"
 ```
 
 Or — for an air-gapped regulator build — vendor it:
@@ -53,7 +94,7 @@ Or — for an air-gapped regulator build — vendor it:
 cargo vendor packages/sdks/auditor-rs
 ```
 
-The crate has exactly five runtime dependencies, all of which are
+The crate has exactly seven runtime dependencies, all of which are
 well-known and well-audited:
 
 | Crate | Why |
@@ -212,8 +253,9 @@ Two failure classes (identical to the other SDKs):
 2. **Operational errors** — the SDK can't run. Returned as
    `AuditorError` with an `AuditorErrorCode`.
 
-See the [TypeScript README](../auditor-ts/README.md#error-model) for
-the full stable reason-code table.
+See the
+[TypeScript README](https://github.com/EnfinitOS/sdk-auditor-ts#error-model)
+for the full stable reason-code table.
 
 ## Verification
 
