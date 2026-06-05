@@ -185,6 +185,22 @@ pub enum SettlementPartyRole {
     Customer,
     #[serde(rename = "PLATFORM")]
     Platform,
+    // The enterprise settlement rebuild (May 2026) widened the
+    // platform's role union — counterparty-addressed splits can pay
+    // agencies, affiliates, resellers, and tax authorities. Without
+    // these variants the strict serde enum REJECTS packs containing
+    // such lines at deserialisation time, even though every
+    // settlement check (idem-key reconstruction, share sums, amount
+    // recomputation) is role-agnostic. Keep in field-for-field
+    // parity with sandbox-core + auditor-ts.
+    #[serde(rename = "AGENCY")]
+    Agency,
+    #[serde(rename = "AFFILIATE")]
+    Affiliate,
+    #[serde(rename = "RESELLER")]
+    Reseller,
+    #[serde(rename = "TAX_AUTHORITY")]
+    TaxAuthority,
 }
 
 impl SettlementPartyRole {
@@ -194,6 +210,10 @@ impl SettlementPartyRole {
             SettlementPartyRole::Venue => "VENUE",
             SettlementPartyRole::Customer => "CUSTOMER",
             SettlementPartyRole::Platform => "PLATFORM",
+            SettlementPartyRole::Agency => "AGENCY",
+            SettlementPartyRole::Affiliate => "AFFILIATE",
+            SettlementPartyRole::Reseller => "RESELLER",
+            SettlementPartyRole::TaxAuthority => "TAX_AUTHORITY",
         }
     }
 }
