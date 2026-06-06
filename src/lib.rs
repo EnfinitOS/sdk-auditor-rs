@@ -61,6 +61,7 @@ pub mod keys;
 pub mod metering_audit;
 pub mod proof_chain;
 pub mod proof_pack;
+pub mod provenance;
 pub mod settlement_audit;
 pub mod tenant_chain;
 pub mod types;
@@ -68,6 +69,13 @@ pub mod types;
 pub use auditor::Auditor;
 pub use errors::{AuditorError, AuditorErrorCode};
 pub use keys::KeyDirectory;
+// Wave 14 Phase 2 — rights-provenance write-time signature
+// verification. Verifies WHO signed each rights lifecycle record;
+// pair with verify_tenant_chain (position) for the full posture.
+pub use provenance::{
+    canonicalise_provenance_signing_input, verify_provenance_chain, verify_provenance_record,
+    ProvenanceSigningFields, VerifyProvenanceChainOptions, PROVENANCE_SIGNING_VERSION,
+};
 pub use tenant_chain::{
     canonicalise_tenant_chain_link, genesis_chain_tip, verify_tenant_chain,
     TenantChainedRecord, TENANT_CHAIN_VERSION,
@@ -76,7 +84,8 @@ pub use types::{
     AuditBundle, AuditReasonCode, AuditReport, AuditStep, AuditStepKind, AuditStepStatus,
     ChainAuditReport, EnvelopeVersion, FullAuditReport, KeysSnapshot, MeterRecord,
     MeterStatus, MeterUnitType, MeteringSummary, ProjectionAuditReport, ProofPack,
-    ProofReceiptPayload, ProofRecord, SettlementAuditReport, SettlementLine,
+    ProofReceiptPayload, ProofRecord, ProvenanceAuditReport, ProvenanceRecord,
+    SettlementAuditReport, SettlementLine,
     SettlementPartyRole, SettlementStatus, SettlementSummary, SettlementTotals,
     SignatureAlgorithm, SignedProofPack, VerificationKey, SDK_VERSION,
     SUPPORTED_ENVELOPE_VERSIONS, SUPPORTED_SIGNATURE_ALGORITHMS,

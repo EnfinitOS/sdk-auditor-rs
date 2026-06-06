@@ -105,6 +105,40 @@ pub fn base64url_decode(s: &str) -> Result<Vec<u8>, base64::DecodeError> {
     URL_SAFE_NO_PAD.decode(trimmed)
 }
 
+/// Strict base64url-decode (RFC 4648 §5) — exact parity with the TS
+/// reference's `base64UrlDecode`. Rejects, with a stable message:
+///   - whitespace anywhere in the input (malleability surface)
+///   - explicit padding (`=`) — every EnfinitOS signer emits unpadded
+///     base64url; accepting padded input would let the same logical
+///     signature have two different wire spellings
+///   - characters outside the base64url alphabet `[A-Za-z0-9_-]`
+///   - lengths with `len % 4 == 1` (cannot represent a byte sequence)
+///
+/// Used by the provenance verifier; the permissive [`base64url_decode`]
+/// above is kept for the pre-0.0.2 receipt path's behaviour.
+pub fn base64url_decode_strict(s: &str) -> Result<Vec<u8>, String> {
+    if s.chars().any(|c| c.is_whitespace()) {
+        return Err("base64url_decode_strict: whitespace not allowed in base64url".into());
+    }
+    if s.contains('=') {
+        return Err(
+            "base64url_decode_strict: padding ('=') not allowed; use unpadded base64url".into(),
+        );
+    }
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("base64url_decode_strict: invalid base64url character".into());
+    }
+    if s.len() % 4 == 1 {
+        return Err("base64url_decode_strict: invalid length (mod 4 == 1)".into());
+    }
+    URL_SAFE_NO_PAD
+        .decode(s)
+        .map_err(|e| format!("base64url_decode_strict: decode failed: {e}"))
+}
+
 /// sha256 of canonical input, returned as `sha256:<hex>`.
 pub fn sha256_prefixed(canonical: &str) -> String {
     use sha2::{Digest, Sha256};

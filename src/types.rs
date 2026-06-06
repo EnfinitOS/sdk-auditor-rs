@@ -12,7 +12,7 @@ pub const SUPPORTED_ENVELOPE_VERSIONS: &[&str] = &["envelope.v1"];
 pub const SUPPORTED_SIGNATURE_ALGORITHMS: &[&str] = &["ed25519"];
 
 /// SDK version stamped onto every audit report.
-pub const SDK_VERSION: &str = "0.0.1";
+pub const SDK_VERSION: &str = "0.0.2";
 
 pub type EnvelopeVersion = String;
 pub type SignatureAlgorithm = String;
@@ -22,7 +22,7 @@ pub type SignatureAlgorithm = String;
 // ---------------------------------------------------------------------
 
 /// One of N public keys the platform may have used to sign records.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationKey {
     #[serde(rename = "keyId")]
     pub key_id: String,
@@ -97,6 +97,110 @@ pub struct ProofRecord {
     pub before_hash: Option<String>,
     #[serde(rename = "afterHash")]
     pub after_hash: String,
+}
+
+// ---------------------------------------------------------------------
+// Rights-provenance records — Wave 14 write-time signing contract
+// ---------------------------------------------------------------------
+
+/// One rights-provenance ledger entry as the platform's proof read
+/// surface emits it (apps/api/src/modules/proof/decoder.ts →
+/// ProofRecord, proof.v1).
+///
+/// This is a DIFFERENT artefact from the spatial-chain [`ProofRecord`]
+/// above: that one wraps a `ProofReceiptPayload` signed over a
+/// canonical-JSON encoding; this one is a rights lifecycle event
+/// (basis assert/verify/reject, right issue/suspend/resume/revoke/
+/// expire, offer propose/accept/counter/reject/withdraw/expire,
+/// challenge open/resolve/withdraw) signed over a flat pipe-delimited
+/// canonical string:
+///
+/// ```text
+/// rightProvenance.v1|<orgId>|<eventType>|<rightId|->|<basisId|->|
+/// <offerId|->|<beforeHash|->|<afterHash|->|<keyId>
+/// ```
+///
+/// where `-` encodes an absent field. The hand-rolled form is what
+/// lets TS / Rust / Python verifiers reconstruct the signed bytes
+/// without sharing a canonical-JSON library.
+///
+/// Signature presence is per-record:
+///   - `signature_algorithm == "ed25519"` → write-time signed.
+///     `signature` is the base64url (unpadded) 64-byte Ed25519
+///     signature; `signer_key_id` matches a [`VerificationKey`];
+///     `payload_canonical` carries the exact signed string as a
+///     transparency aid.
+///   - `signature_algorithm == "hmac-sha256"` → legacy (pre-Wave-14)
+///     record. Read-time transport HMAC only; the verifier reports
+///     `PROVENANCE_UNSIGNED_RECORD` as an informational SKIPPED step,
+///     never INVALID — published 0.0.1-era exports keep verifying.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProvenanceRecord {
+    /// Stable record id (the RightProvenance row id).
+    #[serde(rename = "proofId")]
+    pub proof_id: String,
+    /// Tenant the record belongs to. Part of the signing input.
+    #[serde(rename = "orgId")]
+    pub org_id: String,
+    /// The platform's raw lifecycle event tag (e.g. RIGHT_ISSUED).
+    /// Part of the signing input.
+    #[serde(rename = "provenanceEventType")]
+    pub provenance_event_type: String,
+    /// ISO-8601 — when the event was recorded. Drives key-validity
+    /// checks (plays the role of issuedAt).
+    #[serde(rename = "occurredAt")]
+    pub occurred_at: String,
+    /// Entity pointers — each part of the signing input; None when absent.
+    #[serde(rename = "rightId")]
+    pub right_id: Option<String>,
+    #[serde(rename = "basisId")]
+    pub basis_id: Option<String>,
+    #[serde(rename = "offerId")]
+    pub offer_id: Option<String>,
+    /// Raw entity-chain hashes exactly as persisted (typically
+    /// `sha256:<hex>`-prefixed; None on auxiliary birth rows).
+    #[serde(rename = "provenanceBeforeHash")]
+    pub provenance_before_hash: Option<String>,
+    #[serde(rename = "provenanceAfterHash")]
+    pub provenance_after_hash: Option<String>,
+    /// "ed25519" (write-time signed) or "hmac-sha256" (legacy).
+    #[serde(rename = "signatureAlgorithm")]
+    pub signature_algorithm: String,
+    /// For ed25519 records: base64url (unpadded) 64-byte Ed25519
+    /// signature over the canonical signing input. For hmac-sha256
+    /// records: the platform's transport HMAC (hex) — opaque here.
+    pub signature: String,
+    /// For ed25519 records: the signing key id, resolvable in the
+    /// published verification-key directory. For hmac-sha256 records:
+    /// the synthetic `ledger.v1.<orgId>` tag.
+    #[serde(rename = "signerKeyId")]
+    pub signer_key_id: String,
+    /// For ed25519 records: the exact canonical string that was
+    /// signed. None on legacy records.
+    #[serde(rename = "payloadCanonical")]
+    pub payload_canonical: Option<String>,
+}
+
+/// `verify_provenance_chain` output. Same shape family as
+/// [`ChainAuditReport`], with the signed/unsigned partition surfaced
+/// so a regulator can quote "N of M records carry write-time
+/// signatures" directly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProvenanceAuditReport {
+    pub status: AuditStepStatus,
+    #[serde(rename = "verifiedAt")]
+    pub verified_at: String,
+    #[serde(rename = "sdkVersion")]
+    pub sdk_version: String,
+    #[serde(rename = "recordCount")]
+    pub record_count: usize,
+    /// Records carrying a write-time Ed25519 signature.
+    #[serde(rename = "signedRecordCount")]
+    pub signed_record_count: usize,
+    /// Legacy records (read-time HMAC only) — informational.
+    #[serde(rename = "unsignedRecordCount")]
+    pub unsigned_record_count: usize,
+    pub steps: Vec<AuditStep>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -185,6 +289,22 @@ pub enum SettlementPartyRole {
     Customer,
     #[serde(rename = "PLATFORM")]
     Platform,
+    // The enterprise settlement rebuild (May 2026) widened the
+    // platform's role union — counterparty-addressed splits can pay
+    // agencies, affiliates, resellers, and tax authorities. Without
+    // these variants the strict serde enum REJECTS packs containing
+    // such lines at deserialisation time, even though every
+    // settlement check (idem-key reconstruction, share sums, amount
+    // recomputation) is role-agnostic. Keep in field-for-field
+    // parity with sandbox-core + auditor-ts.
+    #[serde(rename = "AGENCY")]
+    Agency,
+    #[serde(rename = "AFFILIATE")]
+    Affiliate,
+    #[serde(rename = "RESELLER")]
+    Reseller,
+    #[serde(rename = "TAX_AUTHORITY")]
+    TaxAuthority,
 }
 
 impl SettlementPartyRole {
@@ -194,6 +314,10 @@ impl SettlementPartyRole {
             SettlementPartyRole::Venue => "VENUE",
             SettlementPartyRole::Customer => "CUSTOMER",
             SettlementPartyRole::Platform => "PLATFORM",
+            SettlementPartyRole::Agency => "AGENCY",
+            SettlementPartyRole::Affiliate => "AFFILIATE",
+            SettlementPartyRole::Reseller => "RESELLER",
+            SettlementPartyRole::TaxAuthority => "TAX_AUTHORITY",
         }
     }
 }
@@ -324,6 +448,9 @@ pub enum AuditStepKind {
     SettlementTotal,
     #[serde(rename = "key_lookup")]
     KeyLookup,
+    // Wave 14 Phase 2 — rights-provenance write-time signature checks.
+    #[serde(rename = "provenance_signature")]
+    ProvenanceSignature,
 }
 
 /// Reason codes are deliberately enumerable + stable across SDK releases.
@@ -389,6 +516,19 @@ pub enum AuditReasonCode {
     SettlementTotalMismatch,
     #[serde(rename = "SETTLEMENT_ORG_MISMATCH")]
     SettlementOrgMismatch,
+    // Rights-provenance write-time signing (Wave 14 Phase 2). Additive —
+    // packs/exports produced before the platform shipped write-time
+    // provenance signing never trip these.
+    #[serde(rename = "PROVENANCE_SIGNATURE_INVALID")]
+    ProvenanceSignatureInvalid,
+    #[serde(rename = "PROVENANCE_SIGNATURE_MALFORMED")]
+    ProvenanceSignatureMalformed,
+    #[serde(rename = "PROVENANCE_CANONICAL_MISMATCH")]
+    ProvenanceCanonicalMismatch,
+    #[serde(rename = "PROVENANCE_UNSIGNED_RECORD")]
+    ProvenanceUnsignedRecord,
+    #[serde(rename = "PROVENANCE_ORG_MISMATCH")]
+    ProvenanceOrgMismatch,
     // Keys
     #[serde(rename = "KEYS_FETCH_FAILED")]
     KeysFetchFailed,

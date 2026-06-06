@@ -1,18 +1,30 @@
 [package]
 name = "enfinitos-sdk-auditor"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 rust-version = "1.85"
 description = "EnfinitOS Auditor / Verifier SDK (Rust) — cryptographic verification library that regulators, auditors, courts, and third parties use to verify signed proof packs issued by EnfinitOS without trusting the vendor. Offline-by-default; verifies Ed25519 signatures, walks the proof hash chain, re-projects metering, and re-computes settlement reconciliation."
 license = "MIT"
 authors = ["EnfinitOS"]
-homepage = "https://github.com/enfinitos/auditor"
-repository = "https://github.com/enfinitos/auditor"
+homepage = "https://github.com/EnfinitOS/sdk-auditor-rs"
+repository = "https://github.com/EnfinitOS/sdk-auditor-rs"
 documentation = "https://docs.rs/enfinitos-sdk-auditor"
 readme = "README.md"
 keywords = ["audit", "verification", "proof", "ed25519", "compliance"]
 categories = ["cryptography", "authentication"]
 publish = true
+# Allowlist what ships to crates.io. Without this, `cargo package` sweeps
+# in any non-gitignored file in the directory — a stray local artifact
+# once ballooned the package to 180 MiB and the upload was rejected
+# (crates.io caps packages at ~10 MiB).
+include = [
+  "src/**",
+  "tests/**",
+  "Cargo.toml",
+  "README.md",
+  "CHANGELOG.md",
+  "LICENSE",
+]
 
 [lib]
 name = "enfinitos_auditor"
