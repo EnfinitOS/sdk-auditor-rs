@@ -1,7 +1,0 @@
-{
-  "git": {
-    "sha1": "4b1b7526c2df70a536fa1b14bb5335c69832f759",
-    "dirty": true
-  },
-  "path_in_vcs": "packages/sdks/auditor-rs"
-}
