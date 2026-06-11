@@ -12,7 +12,7 @@ pub const SUPPORTED_ENVELOPE_VERSIONS: &[&str] = &["envelope.v1"];
 pub const SUPPORTED_SIGNATURE_ALGORITHMS: &[&str] = &["ed25519"];
 
 /// SDK version stamped onto every audit report.
-pub const SDK_VERSION: &str = "0.0.2";
+pub const SDK_VERSION: &str = "0.0.3";
 
 pub type EnvelopeVersion = String;
 pub type SignatureAlgorithm = String;
@@ -336,6 +336,9 @@ pub enum SettlementStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettlementLine {
+    /// Content-hash idem key. settlement.v2 (CRYPTO-01):
+    /// `sha256(meterRecordIdemKey|partyRole|ledgerAccountCode)`. The
+    /// 0.0.2-era form hashed only `meterRecordIdemKey|partyRole`.
     #[serde(rename = "idemKey")]
     pub idem_key: String,
     #[serde(rename = "meterRecordIdemKey")]
@@ -343,6 +346,8 @@ pub struct SettlementLine {
     #[serde(rename = "partyRole")]
     pub party_role: SettlementPartyRole,
     pub share: String,
+    /// Ledger account the split posts to (e.g. `SPATIAL_REVENUE_GROSS`).
+    /// settlement.v2 folds this into the line idem key.
     #[serde(rename = "ledgerAccountCode")]
     pub ledger_account_code: String,
     #[serde(rename = "amountCents")]

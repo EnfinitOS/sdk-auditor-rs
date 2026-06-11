@@ -20,9 +20,19 @@ pub fn meter_idem_key(proof_receipt_id: &str, unit_type: &str) -> String {
     sha256_hex(&format!("{proof_receipt_id}|{unit_type}"))
 }
 
-/// SettlementLine idem key reconstruction.
-pub fn settlement_idem_key(meter_record_idem_key: &str, party_role: &str) -> String {
-    sha256_hex(&format!("{meter_record_idem_key}|{party_role}"))
+/// SettlementLine idem key reconstruction —
+/// `sha256(meterRecordIdemKey|partyRole|ledgerAccountCode)` (settlement.v2,
+/// CRYPTO-01). Content-hash binds the line to its ledger account code so two
+/// lines for the same meter+role but different accounts can't collide.
+pub fn settlement_idem_key(
+    meter_record_idem_key: &str,
+    party_role: &str,
+    ledger_account_code: &str,
+) -> String {
+    sha256_hex(&format!(
+        "{}|{}|{}",
+        meter_record_idem_key, party_role, ledger_account_code
+    ))
 }
 
 /// Constant-time byte slice comparison.

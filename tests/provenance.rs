@@ -489,7 +489,7 @@ fn report_round_trips_through_serde_with_ts_wire_field_names() {
     assert!(json.contains("\"signedRecordCount\":1"));
     assert!(json.contains("\"unsignedRecordCount\":0"));
     assert!(json.contains("\"recordCount\":1"));
-    assert!(json.contains("\"sdkVersion\":\"0.0.2\""));
+    assert!(json.contains("\"sdkVersion\":\"0.0.3\""));
     assert!(json.contains("\"provenance_signature\""));
 }
 

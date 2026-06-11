@@ -1,6 +1,6 @@
 [package]
 name = "enfinitos-sdk-auditor"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 rust-version = "1.85"
 description = "EnfinitOS Auditor / Verifier SDK (Rust) — cryptographic verification library that regulators, auditors, courts, and third parties use to verify signed proof packs issued by EnfinitOS without trusting the vendor. Offline-by-default; verifies Ed25519 signatures, walks the proof hash chain, re-projects metering, and re-computes settlement reconciliation."

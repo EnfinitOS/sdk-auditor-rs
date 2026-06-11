@@ -71,16 +71,20 @@ pub fn verify_settlement_reconciliation(
             }
         };
 
-        let expected_idem =
-            settlement_idem_key(&line.meter_record_idem_key, line.party_role.as_wire_str());
+        let expected_idem = settlement_idem_key(
+            &line.meter_record_idem_key,
+            line.party_role.as_wire_str(),
+            &line.ledger_account_code,
+        );
         if line.idem_key != expected_idem {
             steps.push(AuditStep {
                 target: format!("settlement.lines[{i}].idemKey"),
                 kind: AuditStepKind::SettlementLine,
                 status: AuditStepStatus::Invalid,
                 reason: Some(AuditReasonCode::SettlementIdemKeyMismatch),
-                message: "settlement-line idemKey does not equal sha256(meterIdemKey|partyRole)"
-                    .to_string(),
+                message:
+                    "settlement-line idemKey does not equal sha256(meterIdemKey|partyRole|ledgerAccountCode)"
+                        .to_string(),
                 detail: Some(serde_json::json!({
                     "expected": expected_idem,
                     "actual": line.idem_key,

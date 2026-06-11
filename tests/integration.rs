@@ -198,7 +198,7 @@ fn make_settlement(metering: &MeteringSummary) -> SettlementSummary {
         let gross = seconds * 100;
         meter_gross.insert(m.idem_key.clone(), gross);
         lines.push(SettlementLine {
-            idem_key: settlement_idem_key(&m.idem_key, "TENANT"),
+            idem_key: settlement_idem_key(&m.idem_key, "TENANT", "SPATIAL_REVENUE_GROSS"),
             meter_record_idem_key: m.idem_key.clone(),
             party_role: SettlementPartyRole::Tenant,
             share: "1.000000".to_string(),
@@ -210,7 +210,7 @@ fn make_settlement(metering: &MeteringSummary) -> SettlementSummary {
     }
     let total: i64 = lines.iter().map(|l| l.amount_cents).sum();
     SettlementSummary {
-        schema_version: "settlement.v1".to_string(),
+        schema_version: "settlement.v2".to_string(),
         org_id: metering.org_id.clone(),
         period_start: metering.period_start.clone(),
         period_end: metering.period_end.clone(),
@@ -225,7 +225,7 @@ fn make_settlement(metering: &MeteringSummary) -> SettlementSummary {
     }
 }
 
-fn parse_dec_int(s: &str, places: u32) -> i64 {
+fn parse_dec_int(s: &str, _places: u32) -> i64 {
     let (int_part, _frac) = match s.split_once('.') {
         Some((a, b)) => (a, b),
         None => (s, ""),

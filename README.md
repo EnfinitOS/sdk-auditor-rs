@@ -14,6 +14,20 @@ verification semantics are deliberately identical: a regulator
 auditing the same proof pack with any of the three SDKs MUST get the
 same VALID/INVALID verdict on every step.
 
+## What's new in 0.0.3
+
+**Settlement idem key is now content-hash based (`settlement.v2`,
+CRYPTO-01) — BREAKING.** `settlement_idem_key` takes a third argument,
+the line's ledger account code, and hashes
+`sha256(meterRecordIdemKey|partyRole|ledgerAccountCode)` (was
+`sha256(meterRecordIdemKey|partyRole)`). The settlement reconciliation
+audit reconstructs line idem keys with all three fields, and
+`SettlementSummary.schema_version` now accepts `"settlement.v2"`.
+Amount, share-sum, and rounding-tolerance checks are unchanged. Packs
+must be re-issued under `settlement.v2` to verify VALID; this matches
+the reference TypeScript and Python ports byte-for-byte. See
+[CHANGELOG.md](https://github.com/EnfinitOS/sdk-auditor-rs/blob/main/CHANGELOG.md).
+
 ## What's new in 0.0.2
 
 **Rights-provenance write-time signature verification.** The platform
@@ -85,7 +99,7 @@ for the full framing. The short version:
 
 ```toml
 [dependencies]
-enfinitos-sdk-auditor = "0.0.2"
+enfinitos-sdk-auditor = "0.0.3"
 ```
 
 Or — for an air-gapped regulator build — vendor it:

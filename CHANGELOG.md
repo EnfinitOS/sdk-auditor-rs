@@ -5,6 +5,52 @@ TypeScript implementation (`@enfinitos/sdk-auditor` on npm)
 release-for-release with identical wire shapes, reason codes, and
 verdicts.
 
+## 0.0.3 — 2026-06-11
+
+### Changed (BREAKING — wire)
+
+- **Settlement line idem key is now content-hash based
+  (`settlement.v2`, CRYPTO-01).** `settlement_idem_key` gains a third
+  parameter, `ledger_account_code`, and now hashes
+  `sha256(meterRecordIdemKey|partyRole|ledgerAccountCode)` instead of
+  the 0.0.2 two-field `sha256(meterRecordIdemKey|partyRole)`. Binding
+  the ledger account code into the key means two splits for the same
+  meter and party role but different ledger accounts no longer collide
+  on a single idem key. The bytes fed to sha256 are exactly
+  `meter_record_idem_key + "|" + party_role + "|" + ledger_account_code`
+  — identical separator, field order, and encoding to the reference
+  TypeScript (`settlementIdemKey`) and Python (`settlement_idem_key`)
+  ports, so the cross-language parity fixtures stay byte-for-byte
+  identical.
+- `verify_settlement_reconciliation` reconstructs each line's expected
+  idem key with all three fields (the `SettlementLine` already carried
+  `ledgerAccountCode` on the wire). The mismatch finding's message is
+  now `... does not equal
+  sha256(meterIdemKey|partyRole|ledgerAccountCode)`. The
+  `SETTLEMENT_IDEM_KEY_MISMATCH` reason code is unchanged.
+- `SettlementSummary.schema_version` now also accepts `"settlement.v2"`
+  (it remains a free-form `String` field; both `settlement.v1` and
+  `settlement.v2` deserialise).
+- `SDK_VERSION` constant (stamped onto every audit report) bumped to
+  `"0.0.3"`.
+
+### Unchanged
+
+- **Amount, share-sum, and rounding logic are untouched.** The
+  `floor(grossCents * share)` recomputation, the per-meter
+  share-sum-equals-1.000000 check, and the rounding-tolerance band are
+  byte-identical to 0.0.2. This release is the idem-key derivation,
+  schema-version acceptance, and version bump only.
+
+### Migration
+
+- Packs must be re-issued by the platform under `settlement.v2` (the
+  new 3-field idem keys) to verify VALID. A `settlement.v1` pack whose
+  lines carry 2-field idem keys will now report
+  `SETTLEMENT_IDEM_KEY_MISMATCH` — by design, since the platform's
+  settlement projector moved to the 3-field key. No code change is
+  required on the auditor side beyond upgrading the crate.
+
 ## 0.0.2 — 2026-06-05
 
 ### Added
