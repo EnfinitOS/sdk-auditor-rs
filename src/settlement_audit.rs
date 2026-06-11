@@ -48,6 +48,43 @@ pub fn verify_settlement_reconciliation(
             .push(line);
     }
 
+    // CRYPTO-04: recompute each meter's deterministic integer split exactly
+    // (floor per share + residual reabsorbed into the largest-share line, ties
+    // broken by the smaller partyRole) — the byte-for-byte mirror of the
+    // platform's `splitGrossDeterministically` — and require exact-cent
+    // equality per line below. No tolerance band.
+    let mut expected_by_idx: HashMap<usize, i64> = HashMap::new();
+    {
+        let mut idx_by_meter: HashMap<&str, Vec<usize>> = HashMap::new();
+        for (i, line) in settlement.lines.iter().enumerate() {
+            idx_by_meter
+                .entry(line.meter_record_idem_key.as_str())
+                .or_default()
+                .push(i);
+        }
+        for (meter_idem, idxs) in idx_by_meter.iter() {
+            let gross = match settlement.meter_gross.get(*meter_idem) {
+                Some(g) => *g,
+                None => continue, // flagged per-line below
+            };
+            let shares: Vec<i128> = idxs
+                .iter()
+                .map(|&i| {
+                    parse_decimal_to_scaled(&settlement.lines[i].share, SHARE_PLACES)
+                        .unwrap_or(0)
+                })
+                .collect();
+            let roles: Vec<&str> = idxs
+                .iter()
+                .map(|&i| settlement.lines[i].party_role.as_wire_str())
+                .collect();
+            let split = deterministic_split_cents(gross, &shares, &roles);
+            for (k, &i) in idxs.iter().enumerate() {
+                expected_by_idx.insert(i, split[k]);
+            }
+        }
+    }
+
     let mut computed_gross: i64 = 0;
     let mut computed_net_to_tenant: i64 = 0;
     let mut computed_platform_fee: i64 = 0;
@@ -119,56 +156,46 @@ pub fn verify_settlement_reconciliation(
             }
         };
 
-        let share_scaled = match parse_decimal_to_scaled(&line.share, SHARE_PLACES) {
-            Ok(v) => v,
-            Err(_) => {
-                steps.push(AuditStep {
-                    target: format!("settlement.lines[{i}].share"),
-                    kind: AuditStepKind::SettlementLine,
-                    status: AuditStepStatus::Invalid,
-                    reason: Some(AuditReasonCode::SettlementAmountMismatch),
-                    message: "share value is not a valid decimal".to_string(),
-                    detail: None,
-                });
-                continue;
-            }
-        };
-        let expected: i128 =
-            (gross as i128 * share_scaled) / (10_i128.pow(SHARE_PLACES));
-        if expected != line.amount_cents as i128 {
-            let group = lines_by_meter
-                .get(line.meter_record_idem_key.as_str())
-                .cloned()
-                .unwrap_or_default();
-            let is_largest = group.iter().all(|g| {
-                parse_decimal_to_scaled(&g.share, SHARE_PLACES).unwrap_or(0)
-                    <= share_scaled
+        // Validate the share decimal up front so malformed input surfaces a
+        // clear step rather than silently scaling to zero.
+        if parse_decimal_to_scaled(&line.share, SHARE_PLACES).is_err() {
+            steps.push(AuditStep {
+                target: format!("settlement.lines[{i}].share"),
+                kind: AuditStepKind::SettlementLine,
+                status: AuditStepStatus::Invalid,
+                reason: Some(AuditReasonCode::SettlementAmountMismatch),
+                message: "share value is not a valid decimal".to_string(),
+                detail: None,
             });
-            let drift = (expected - line.amount_cents as i128).unsigned_abs();
-            if !is_largest || drift > group.len() as u128 {
-                steps.push(AuditStep {
-                    target: format!("settlement.lines[{i}].amountCents"),
-                    kind: AuditStepKind::SettlementLine,
-                    status: AuditStepStatus::Invalid,
-                    reason: Some(AuditReasonCode::SettlementAmountMismatch),
-                    message:
-                        "amountCents does not match floor(grossCents * share) within rounding tolerance"
-                            .to_string(),
-                    detail: Some(serde_json::json!({
-                        "expected": expected,
-                        "actual": line.amount_cents,
-                        "gross": gross,
-                        "share": line.share,
-                    })),
-                });
-                continue;
-            }
+            continue;
+        }
+        // Exact-cent comparison against the precomputed deterministic split
+        // (CRYPTO-04) — the largest-share line carries the residual exactly,
+        // every other line is floor(gross * share). No tolerance band.
+        let expected = expected_by_idx.get(&i).copied();
+        if expected != Some(line.amount_cents) {
+            steps.push(AuditStep {
+                target: format!("settlement.lines[{i}].amountCents"),
+                kind: AuditStepKind::SettlementLine,
+                status: AuditStepStatus::Invalid,
+                reason: Some(AuditReasonCode::SettlementAmountMismatch),
+                message:
+                    "amountCents does not equal the deterministic integer split of grossCents by share"
+                        .to_string(),
+                detail: Some(serde_json::json!({
+                    "expected": expected,
+                    "actual": line.amount_cents,
+                    "gross": gross,
+                    "share": line.share,
+                })),
+            });
+            continue;
         }
         steps.push(valid_step(
             &format!("settlement.lines[{i}].amountCents"),
             AuditStepKind::SettlementLine,
             &format!(
-                "amountCents={} matches gross={} * share={}",
+                "amountCents={} matches deterministic split of gross={} by share={}",
                 line.amount_cents, gross, line.share
             ),
         ));
@@ -269,6 +296,37 @@ fn push_total_check(steps: &mut Vec<AuditStep>, label: &str, claimed: i64, compu
             detail: None,
         });
     }
+}
+
+/// Mirror of the platform's `splitGrossDeterministically`
+/// (apps/api settlementService.ts). Floors each share's slice as
+/// `floor(gross * shareScaled / 1_000_000)` and reabsorbs the residual
+/// (`gross − Σ floors`) into the largest-share line, ties broken by the
+/// smaller partyRole (lexical). Deterministic and sums to exactly `gross`.
+fn deterministic_split_cents(
+    gross: i64,
+    shares_scaled: &[i128],
+    party_roles: &[&str],
+) -> Vec<i64> {
+    let scale = 10_i128.pow(SHARE_PLACES);
+    let mut floors: Vec<i64> = shares_scaled
+        .iter()
+        .map(|&s| ((gross as i128 * s) / scale) as i64)
+        .collect();
+    let sum: i64 = floors.iter().sum();
+    let remainder = gross - sum;
+    if remainder != 0 && !floors.is_empty() {
+        let mut target = 0usize;
+        for (i, &s) in shares_scaled.iter().enumerate().skip(1) {
+            if s > shares_scaled[target]
+                || (s == shares_scaled[target] && party_roles[i] < party_roles[target])
+            {
+                target = i;
+            }
+        }
+        floors[target] += remainder;
+    }
+    floors
 }
 
 fn parse_decimal_to_scaled(s: &str, places: u32) -> Result<i128, ()> {

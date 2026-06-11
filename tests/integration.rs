@@ -350,3 +350,113 @@ fn settlement_flags_amount_mismatch() {
     let report = auditor.verify_settlement_reconciliation(&metering, &settlement);
     assert_eq!(report.status, AuditStepStatus::Invalid);
 }
+
+// CRYPTO-04 — exact-cent multi-party split. Production splits a meter's gross
+// across party shares as a deterministic integer split (floor per share +
+// residual reabsorbed into the largest-share line). The auditor mirrors that
+// split and requires EXACT-cent equality — no ±band — so a single-cent error
+// on any line, including the residual-bearing largest line, is caught.
+
+fn make_multi_party_split() -> (MeteringSummary, SettlementSummary) {
+    let meter_idem = "meter_multiparty_x";
+    let gross: i64 = 10001; // 0.7 / 0.25 / 0.05 -> 7000.7 / 2500.25 / 500.05
+
+    let metering = MeteringSummary {
+        schema_version: "metering.v1".to_string(),
+        org_id: "org_test".to_string(),
+        period_start: "2027-01-01T00:00:00.000Z".to_string(),
+        period_end: "2027-02-01T00:00:00.000Z".to_string(),
+        records: vec![MeterRecord {
+            idem_key: meter_idem.to_string(),
+            proof_receipt_id: "rcpt_multiparty_x".to_string(),
+            unit_type: MeterUnitType::DwellSeconds,
+            unit_count: "100.000000".to_string(),
+            weight: "1.000000".to_string(),
+            spatial_anchor_id: "anchor_x".to_string(),
+            spatial_placement_id: None,
+            observed_at: "2027-01-15T00:00:00.000Z".to_string(),
+            status: MeterStatus::Projected,
+        }],
+        totals: None,
+    };
+
+    let lines = vec![
+        // Largest share carries the +1 residual → 7001.
+        SettlementLine {
+            idem_key: settlement_idem_key(meter_idem, "TENANT", "SPATIAL_REVENUE_GROSS"),
+            meter_record_idem_key: meter_idem.to_string(),
+            party_role: SettlementPartyRole::Tenant,
+            share: "0.700000".to_string(),
+            ledger_account_code: "SPATIAL_REVENUE_GROSS".to_string(),
+            amount_cents: 7001,
+            currency: "GBP".to_string(),
+            status: SettlementStatus::Projected,
+        },
+        SettlementLine {
+            idem_key: settlement_idem_key(meter_idem, "VENUE", "SPATIAL_VENUE_PAYOUT"),
+            meter_record_idem_key: meter_idem.to_string(),
+            party_role: SettlementPartyRole::Venue,
+            share: "0.250000".to_string(),
+            ledger_account_code: "SPATIAL_VENUE_PAYOUT".to_string(),
+            amount_cents: 2500,
+            currency: "GBP".to_string(),
+            status: SettlementStatus::Projected,
+        },
+        SettlementLine {
+            idem_key: settlement_idem_key(meter_idem, "PLATFORM", "SPATIAL_PLATFORM_FEE"),
+            meter_record_idem_key: meter_idem.to_string(),
+            party_role: SettlementPartyRole::Platform,
+            share: "0.050000".to_string(),
+            ledger_account_code: "SPATIAL_PLATFORM_FEE".to_string(),
+            amount_cents: 500,
+            currency: "GBP".to_string(),
+            status: SettlementStatus::Projected,
+        },
+    ];
+
+    let mut meter_gross: BTreeMap<String, i64> = BTreeMap::new();
+    meter_gross.insert(meter_idem.to_string(), gross);
+
+    let settlement = SettlementSummary {
+        schema_version: "settlement.v2".to_string(),
+        org_id: "org_test".to_string(),
+        period_start: "2027-01-01T00:00:00.000Z".to_string(),
+        period_end: "2027-02-01T00:00:00.000Z".to_string(),
+        currency: "GBP".to_string(),
+        meter_gross,
+        lines,
+        totals: Some(SettlementTotals {
+            gross_cents: 10001,
+            net_to_tenant_cents: 7001,
+            platform_fee_cents: 500,
+        }),
+    };
+
+    (metering, settlement)
+}
+
+#[test]
+fn settlement_exact_cent_multi_party_split_passes() {
+    let (metering, settlement) = make_multi_party_split();
+    let auditor = Auditor::new(vec![]);
+    let report = auditor.verify_settlement_reconciliation(&metering, &settlement);
+    assert_eq!(report.status, AuditStepStatus::Valid);
+}
+
+#[test]
+fn settlement_exact_cent_flags_one_cent_error_on_residual_line() {
+    let (metering, mut settlement) = make_multi_party_split();
+    settlement.lines[0].amount_cents = 7000; // was 7001 — drop the residual cent
+    let auditor = Auditor::new(vec![]);
+    let report = auditor.verify_settlement_reconciliation(&metering, &settlement);
+    assert_eq!(report.status, AuditStepStatus::Invalid);
+}
+
+#[test]
+fn settlement_exact_cent_flags_one_cent_error_on_non_largest_line() {
+    let (metering, mut settlement) = make_multi_party_split();
+    settlement.lines[1].amount_cents = 2499; // was 2500
+    let auditor = Auditor::new(vec![]);
+    let report = auditor.verify_settlement_reconciliation(&metering, &settlement);
+    assert_eq!(report.status, AuditStepStatus::Invalid);
+}
