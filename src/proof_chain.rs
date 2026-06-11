@@ -116,6 +116,41 @@ pub fn verify_proof_chain(records: &[ProofRecord]) -> ChainAuditReport {
         prev_issued_at_ms = curr_ms;
     }
 
+    // 4. Nonce uniqueness (CRYPTO-07). The platform enforces
+    // @@unique([orgId, nonce]); a repeated nonce inside a pack means a replayed
+    // or duplicated receipt — which the hash-chain walk alone won't catch if a
+    // duplicate is spliced in with a fresh beforeHash.
+    let mut seen_nonce: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::new();
+    let mut nonce_reuse = 0usize;
+    for (i, rec) in records.iter().enumerate() {
+        let nonce = rec.payload.nonce.as_str();
+        if let Some(&first_idx) = seen_nonce.get(nonce) {
+            nonce_reuse += 1;
+            steps.push(AuditStep {
+                target: format!("records[{i}].payload.nonce"),
+                kind: AuditStepKind::ChainLink,
+                status: AuditStepStatus::Invalid,
+                reason: Some(AuditReasonCode::ChainNonceReused),
+                message: format!(
+                    "record[{i}] reuses a nonce first seen at record[{first_idx}] — per-org nonce uniqueness is enforced; a repeat indicates a replayed or duplicated receipt"
+                ),
+                detail: Some(serde_json::json!({
+                    "firstIndex": first_idx,
+                    "duplicateIndex": i,
+                })),
+            });
+        } else {
+            seen_nonce.insert(nonce, i);
+        }
+    }
+    if nonce_reuse == 0 {
+        steps.push(valid_step(
+            "records[].payload.nonce",
+            &format!("all {} record nonces are unique", records.len()),
+        ));
+    }
+
     let any_invalid = steps.iter().any(|s| s.status == AuditStepStatus::Invalid);
     ChainAuditReport {
         status: if any_invalid {

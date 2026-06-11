@@ -497,6 +497,8 @@ pub enum AuditReasonCode {
     ChainLinkMismatch,
     #[serde(rename = "CHAIN_OUT_OF_ORDER")]
     ChainOutOfOrder,
+    #[serde(rename = "CHAIN_NONCE_REUSED")]
+    ChainNonceReused,
     // Metering
     #[serde(rename = "METER_RECORD_FOR_UNKNOWN_PROOF")]
     MeterRecordForUnknownProof,
