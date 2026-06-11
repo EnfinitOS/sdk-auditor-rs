@@ -8,7 +8,7 @@ use crate::keys::{KeyDirectory, KeyLookupResult, KeyMissReason};
 use crate::types::{
     AuditReasonCode, AuditStep, AuditStepKind, AuditStepStatus, ProofRecord,
 };
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, VerifyingKey};
 
 /// Verify a single proof record. Returns the audit steps generated:
 ///   1. canonicalisation parity
@@ -163,8 +163,14 @@ pub fn verify_proof_record(
     };
     let signature = Signature::from_bytes(&sig_arr);
 
+    // CRYPTO-02: verify_strict rejects non-canonical S and small-order public
+    // keys, matching the strict acceptance set of the TS (@noble/ed25519) and
+    // Python (pyca/OpenSSL) verifiers. Plain `verify` (the Verifier trait) is
+    // malleability-tolerant, so the three "independent" verifiers could
+    // disagree on a mauled signature — fatal for a multi-party verification
+    // claim where each party may run a different language binding.
     let ok = verifying_key
-        .verify(signing_input.as_bytes(), &signature)
+        .verify_strict(signing_input.as_bytes(), &signature)
         .is_ok();
     if ok {
         steps.push(valid_step(

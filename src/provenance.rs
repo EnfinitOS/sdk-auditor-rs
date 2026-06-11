@@ -59,7 +59,7 @@
 //!   - `proof_chain` — the spatial-chain receipt walker; receipts are
 //!     a different artefact with a different canonical encoding.
 
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, VerifyingKey};
 
 use crate::canonical_json::base64url_decode_strict;
 use crate::keys::{KeyDirectory, KeyLookupResult, KeyMissReason};
@@ -324,8 +324,10 @@ pub fn verify_provenance_record(
         }
     };
     let signature = Signature::from_bytes(&sig_arr);
+    // CRYPTO-02: strict verification (canonical S + reject small-order) so this
+    // Rust verifier shares an acceptance set with the TS/Python verifiers.
     let ok = verifying_key
-        .verify(shipped_canonical.as_bytes(), &signature)
+        .verify_strict(shipped_canonical.as_bytes(), &signature)
         .is_ok();
 
     steps.push(AuditStep {
