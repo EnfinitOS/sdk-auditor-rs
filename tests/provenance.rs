@@ -489,7 +489,13 @@ fn report_round_trips_through_serde_with_ts_wire_field_names() {
     assert!(json.contains("\"signedRecordCount\":1"));
     assert!(json.contains("\"unsignedRecordCount\":0"));
     assert!(json.contains("\"recordCount\":1"));
-    assert!(json.contains("\"sdkVersion\":\"0.0.3\""));
+    // Compare against the exported constant, not a hardcoded literal, so a
+    // version bump can never break this test again (it asserts the report
+    // STAMPS the SDK version — not which version that is).
+    assert!(json.contains(&format!(
+        "\"sdkVersion\":\"{}\"",
+        enfinitos_auditor::SDK_VERSION
+    )));
     assert!(json.contains("\"provenance_signature\""));
 }
 

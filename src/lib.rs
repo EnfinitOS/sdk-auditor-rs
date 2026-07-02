@@ -46,6 +46,10 @@
 //!     pack,
 //!     metering: None,
 //!     settlement: None,
+//!     // Pass the previous pack's tail afterHash when verifying a later
+//!     // pack in a tenant's chain (cross-pack continuity); None for a
+//!     // standalone / first pack.
+//!     prior_after_hash: None,
 //! });
 //! println!("verdict: {:?}", report.status);
 //! ```
@@ -56,6 +60,7 @@
 pub mod auditor;
 pub mod canonical_json;
 pub mod errors;
+pub mod exports;
 pub mod hashing;
 pub mod keys;
 pub mod metering_audit;
@@ -68,6 +73,12 @@ pub mod types;
 
 pub use auditor::Auditor;
 pub use errors::{AuditorError, AuditorErrorCode};
+// Signed exports (export.v1) — verify the platform's signed metering /
+// settlement exports (`?export=true`) offline. This is the signature gate;
+// deserialise `export.payload` into the summary type and pass it on to
+// verify_metering_projection / verify_settlement_reconciliation for the
+// content checks.
+pub use exports::{verify_signed_export, SignedExport, SignedExportAuditReport};
 pub use keys::KeyDirectory;
 // Wave 14 Phase 2 — rights-provenance write-time signature
 // verification. Verifies WHO signed each rights lifecycle record;

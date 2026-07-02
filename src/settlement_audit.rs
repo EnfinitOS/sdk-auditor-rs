@@ -1,6 +1,6 @@
 //! Settlement reconciliation audit.
 
-use crate::hashing::settlement_idem_key;
+use crate::hashing::{settlement_idem_key, settlement_idem_key_v1};
 use crate::types::{
     AuditReasonCode, AuditStep, AuditStepKind, AuditStepStatus, MeteringSummary,
     SettlementAuditReport, SettlementLine, SettlementSummary, SDK_VERSION,
@@ -108,23 +108,41 @@ pub fn verify_settlement_reconciliation(
             }
         };
 
-        let expected_idem = settlement_idem_key(
-            &line.meter_record_idem_key,
-            line.party_role.as_wire_str(),
-            &line.ledger_account_code,
-        );
+        // idemKey reconstruction — VERSION-AWARE (VER-02). settlement.v2 uses
+        // the 3-field content-hash key (CRYPTO-01); legacy settlement.v1
+        // packs used the 2-field `sha256(meterIdemKey|partyRole)`. Selecting
+        // by the summary's schemaVersion keeps old proof packs verifiable
+        // instead of flagging every v1 line as a mismatch.
+        let is_v2 = settlement.schema_version == "settlement.v2";
+        let expected_idem = if is_v2 {
+            settlement_idem_key(
+                &line.meter_record_idem_key,
+                line.party_role.as_wire_str(),
+                &line.ledger_account_code,
+            )
+        } else {
+            settlement_idem_key_v1(
+                &line.meter_record_idem_key,
+                line.party_role.as_wire_str(),
+            )
+        };
         if line.idem_key != expected_idem {
             steps.push(AuditStep {
                 target: format!("settlement.lines[{i}].idemKey"),
                 kind: AuditStepKind::SettlementLine,
                 status: AuditStepStatus::Invalid,
                 reason: Some(AuditReasonCode::SettlementIdemKeyMismatch),
-                message:
+                message: if is_v2 {
                     "settlement-line idemKey does not equal sha256(meterIdemKey|partyRole|ledgerAccountCode)"
-                        .to_string(),
+                        .to_string()
+                } else {
+                    "settlement-line idemKey does not equal sha256(meterIdemKey|partyRole)"
+                        .to_string()
+                },
                 detail: Some(serde_json::json!({
                     "expected": expected_idem,
                     "actual": line.idem_key,
+                    "schemaVersion": settlement.schema_version,
                 })),
             });
         } else {

@@ -14,18 +14,22 @@ verification semantics are deliberately identical: a regulator
 auditing the same proof pack with any of the three SDKs MUST get the
 same VALID/INVALID verdict on every step.
 
-## What's new in 0.0.3
+## What's new in 0.0.4
 
-**Settlement idem key is now content-hash based (`settlement.v2`,
-CRYPTO-01) — BREAKING.** `settlement_idem_key` takes a third argument,
-the line's ledger account code, and hashes
-`sha256(meterRecordIdemKey|partyRole|ledgerAccountCode)` (was
-`sha256(meterRecordIdemKey|partyRole)`). The settlement reconciliation
-audit reconstructs line idem keys with all three fields, and
-`SettlementSummary.schema_version` now accepts `"settlement.v2"`.
-Amount, share-sum, and rounding-tolerance checks are unchanged. Packs
-must be re-issued under `settlement.v2` to verify VALID; this matches
-the reference TypeScript and Python ports byte-for-byte. See
+**Settlement verification is version-aware (`settlement.v1` + `settlement.v2`).**
+The current settlement idem key is 3-field and content-hash based (CRYPTO-01):
+`settlement_idem_key(meter_record_idem_key, party_role, ledger_account_code)` =
+`sha256(meterRecordIdemKey|partyRole|ledgerAccountCode)`, matching the
+production settlement engine. Packs stamped `settlement.v1` (sealed before the
+CRYPTO-01 flip) still verify: the auditor selects the legacy 2-field
+`sha256(meterRecordIdemKey|partyRole)` reconstruction
+(`settlement_idem_key_v1`) by the summary's `schemaVersion` (VER-02), so
+genuine historical evidence is never reported as tampered. **Cross-pack
+chains** verify via the new `prior_after_hash: Option<&str>` parameter on
+`verify_proof_chain` (and `AuditBundle.prior_after_hash`) — pass the previous
+pack's tail `afterHash` when verifying a later pack in a tenant's chain (the
+platform seals packs in series). **Signed exports** (`?export=true`
+metering/settlement envelopes) verify offline via `verify_signed_export`. See
 [CHANGELOG.md](https://github.com/EnfinitOS/sdk-auditor-rs/blob/main/CHANGELOG.md).
 
 ## What's new in 0.0.2
@@ -99,7 +103,7 @@ for the full framing. The short version:
 
 ```toml
 [dependencies]
-enfinitos-sdk-auditor = "0.0.3"
+enfinitos-sdk-auditor = "0.0.4"
 ```
 
 Or — for an air-gapped regulator build — vendor it:
@@ -135,12 +139,15 @@ fn main() {
     let pack_json = fs::read_to_string("./pack.json").unwrap();
     let pack: SignedProofPack = serde_json::from_str(&pack_json).unwrap();
 
-    // 3. Audit.
+    // 3. Audit. (Pass the previous pack's tail afterHash as
+    // `prior_after_hash` when verifying a later pack in a tenant's
+    // chain; None for a standalone / first pack.)
     let auditor = Auditor::new(keys);
     let report = auditor.verify_all(&AuditBundle {
         pack,
         metering: None,
         settlement: None,
+        prior_after_hash: None,
     });
 
     // 4. Print verdict.
@@ -219,6 +226,7 @@ for pack_path in pack_paths {
         pack,
         metering: None,
         settlement: None,
+        prior_after_hash: None,
     });
     if report.status != AuditStepStatus::Valid {
         invalid_packs.push(pack_path);
@@ -237,7 +245,11 @@ impl Auditor {
     pub fn from_runtime_keys_json(json: &str) -> Result<Self, AuditorError>;
 
     pub fn verify_proof_pack(&self, pack: &SignedProofPack) -> AuditReport;
-    pub fn verify_proof_chain(&self, records: &[ProofRecord]) -> ChainAuditReport;
+    pub fn verify_proof_chain(
+        &self,
+        records: &[ProofRecord],
+        prior_after_hash: Option<&str>,
+    ) -> ChainAuditReport;
     pub fn verify_metering_projection(
         &self,
         records: &[ProofRecord],
@@ -291,7 +303,10 @@ The three SDKs are kept byte-for-byte identical at the wire boundary:
 | Canonical proof payload | `canonicaliseProofPayload` | `canonicalise_proof_payload` | `canonicalise_proof_payload` |
 | Sort-key encoder | `canonicalSortKeys` | `canonical_sort_keys` | `canonical_sort_keys` |
 | Meter idem key | `meterIdemKey` | `meter_idem_key` | `meter_idem_key` |
-| Settlement idem key | `settlementIdemKey` | `settlement_idem_key` | `settlement_idem_key` |
+| Settlement idem key (v2) | `settlementIdemKey` | `settlement_idem_key` | `settlement_idem_key` |
+| Settlement idem key (legacy v1) | `settlementIdemKeyV1` | `settlement_idem_key_v1` | `settlement_idem_key_v1` |
+| Cross-pack chain anchor | `priorAfterHash` | `prior_after_hash` | `prior_after_hash` |
+| Signed exports (export.v1) | `verifySignedExport` | `verify_signed_export` | `verify_signed_export` |
 | Ed25519 verify | `@noble/ed25519` | `cryptography` | `ed25519-dalek` |
 | Decimal scaling | `bigint` at 10^6 | `int` at 10^6 | `i128` at 10^6 |
 | Reason codes | identical enum | identical enum | identical enum |

@@ -35,6 +35,16 @@ pub fn settlement_idem_key(
     ))
 }
 
+/// SettlementLine idem key reconstruction for legacy **settlement.v1** packs —
+/// the 2-field `sha256(meterRecordIdemKey|partyRole)`. Kept so the auditor can
+/// still verify proof packs sealed before the CRYPTO-01 / settlement.v2
+/// 3-field key landed (VER-02). The caller selects v1 vs v2 by the summary's
+/// `schemaVersion`; do not use this for v2 packs. Byte-identical to the TS
+/// `settlementIdemKeyV1` and Python `settlement_idem_key_v1`.
+pub fn settlement_idem_key_v1(meter_record_idem_key: &str, party_role: &str) -> String {
+    sha256_hex(&format!("{}|{}", meter_record_idem_key, party_role))
+}
+
 /// Constant-time byte slice comparison.
 pub fn constant_time_equal(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {

@@ -12,7 +12,7 @@ pub const SUPPORTED_ENVELOPE_VERSIONS: &[&str] = &["envelope.v1"];
 pub const SUPPORTED_SIGNATURE_ALGORITHMS: &[&str] = &["ed25519"];
 
 /// SDK version stamped onto every audit report.
-pub const SDK_VERSION: &str = "0.0.3";
+pub const SDK_VERSION: &str = "0.0.4";
 
 pub type EnvelopeVersion = String;
 pub type SignatureAlgorithm = String;
@@ -417,6 +417,16 @@ pub struct AuditBundle {
     pub pack: SignedProofPack,
     pub metering: Option<MeteringSummary>,
     pub settlement: Option<SettlementSummary>,
+    /// Optional anchor for cross-pack chain continuity. When a tenant
+    /// issues multiple packs serially (the normal case), each pack's
+    /// first record carries the previous pack's last `afterHash` as its
+    /// `beforeHash`. The genesis invariant
+    /// (`records[0].before_hash == None`) holds for the FIRST pack
+    /// only; for every subsequent pack pass the prior pack's tail
+    /// `afterHash` here so the chain-walk verifies cross-pack
+    /// continuity instead of falsely tripping
+    /// GENESIS_BEFORE_HASH_NOT_NULL. `None` for a standalone pack.
+    pub prior_after_hash: Option<String>,
 }
 
 // ---------------------------------------------------------------------
@@ -536,6 +546,12 @@ pub enum AuditReasonCode {
     ProvenanceUnsignedRecord,
     #[serde(rename = "PROVENANCE_ORG_MISMATCH")]
     ProvenanceOrgMismatch,
+    // Signed exports (export.v1 envelopes from /v1/metering?export=true and
+    // /v1/settlement?export=true). Additive — reuses the envelope / signature
+    // / canonicalisation / key codes above; only the hash-transparency check
+    // needs its own code.
+    #[serde(rename = "EXPORT_PAYLOAD_HASH_MISMATCH")]
+    ExportPayloadHashMismatch,
     // Keys
     #[serde(rename = "KEYS_FETCH_FAILED")]
     KeysFetchFailed,

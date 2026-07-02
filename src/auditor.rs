@@ -110,8 +110,17 @@ impl Auditor {
         }
     }
 
-    pub fn verify_proof_chain(&self, records: &[ProofRecord]) -> ChainAuditReport {
-        verify_proof_chain(records)
+    /// Chain-walk only. Pass `prior_after_hash` to anchor a later
+    /// pack's first record at the previous pack's tail `afterHash`
+    /// (cross-pack continuity); pass `None` for a standalone / first
+    /// pack — the auditor then enforces the genesis invariant
+    /// (`records[0].before_hash == None`).
+    pub fn verify_proof_chain(
+        &self,
+        records: &[ProofRecord],
+        prior_after_hash: Option<&str>,
+    ) -> ChainAuditReport {
+        verify_proof_chain(records, prior_after_hash)
     }
 
     pub fn verify_metering_projection(
@@ -135,7 +144,13 @@ impl Auditor {
     pub fn verify_all(&self, bundle: &AuditBundle) -> FullAuditReport {
         let verified_at = chrono::Utc::now().to_rfc3339();
         let pack_report = self.verify_proof_pack(&bundle.pack);
-        let chain_report = self.verify_proof_chain(&bundle.pack.records);
+        // Forward the optional cross-pack anchor — see
+        // AuditBundle::prior_after_hash. Genesis (no prior pack)
+        // defaults to None.
+        let chain_report = self.verify_proof_chain(
+            &bundle.pack.records,
+            bundle.prior_after_hash.as_deref(),
+        );
 
         let metering_ref = bundle
             .metering

@@ -9,10 +9,24 @@ use chrono::DateTime;
 /// Walk records in array order; report each link's status.
 ///
 /// Invariants:
-///   1. records[0].before_hash MUST be None.
+///   1. records[0].before_hash MUST equal the provided `prior_after_hash`
+///      (or `None` for a standalone / first pack).
 ///   2. records[i].before_hash MUST equal records[i-1].after_hash.
 ///   3. issued_at MUST be non-decreasing along the chain.
-pub fn verify_proof_chain(records: &[ProofRecord]) -> ChainAuditReport {
+///
+/// `prior_after_hash` anchors the first record's `before_hash`. Pass
+/// `None` when verifying a standalone or first pack — the auditor then
+/// enforces the genesis invariant (`records[0].before_hash == None`).
+/// Pass the previous pack's tail `after_hash` when verifying a later
+/// pack in a tenant's chain so cross-pack continuity is enforced rather
+/// than falsely tripped as GENESIS_BEFORE_HASH_NOT_NULL — the platform
+/// seals packs in series and threads `previousAfterHash` into each new
+/// pack (packages/sandbox-core/src/tenantState.ts `sealProofPack`).
+/// Mirrors the TS `verifyProofChain(records, priorAfterHash)`.
+pub fn verify_proof_chain(
+    records: &[ProofRecord],
+    prior_after_hash: Option<&str>,
+) -> ChainAuditReport {
     let verified_at = chrono::Utc::now().to_rfc3339();
     let mut steps: Vec<AuditStep> = Vec::new();
 
@@ -34,23 +48,55 @@ pub fn verify_proof_chain(records: &[ProofRecord]) -> ChainAuditReport {
         };
     }
 
-    // 1. Genesis check.
+    // 1. Genesis / cross-pack link check.
     let first = &records[0];
-    if first.before_hash.is_some() {
-        steps.push(AuditStep {
-            target: "records[0].beforeHash".to_string(),
-            kind: AuditStepKind::ChainLink,
-            status: AuditStepStatus::Invalid,
-            reason: Some(AuditReasonCode::GenesisBeforeHashNotNull),
-            message: "first record carries a non-null beforeHash".to_string(),
-            detail: Some(serde_json::json!({
-                "beforeHash": first.before_hash,
-            })),
-        });
+    if first.before_hash.as_deref() != prior_after_hash {
+        // Two distinct failure modes, distinct messages (mirrors TS):
+        //   - prior_after_hash == None: caller asserted this is the genesis
+        //     of the tenant's chain, but the first record points at
+        //     something earlier we weren't given.
+        //   - prior_after_hash == Some(_): caller passed the previous
+        //     pack's tail hash; first.before_hash should match it for
+        //     cross-pack continuity.
+        match prior_after_hash {
+            None => {
+                steps.push(AuditStep {
+                    target: "records[0].beforeHash".to_string(),
+                    kind: AuditStepKind::ChainLink,
+                    status: AuditStepStatus::Invalid,
+                    reason: Some(AuditReasonCode::GenesisBeforeHashNotNull),
+                    message: "first record carries a non-null beforeHash — the chain is rooted at a record the auditor has not been given. Pass `prior_after_hash` if this is a later pack in a tenant's chain; otherwise the pack is incomplete.".to_string(),
+                    detail: Some(serde_json::json!({
+                        "beforeHash": first.before_hash,
+                    })),
+                });
+            }
+            Some(expected) => {
+                // Same reason as continuity breaks within a pack — both are
+                // "this beforeHash does not match the expected prior
+                // afterHash"; here the "prior" is the previous pack's tail
+                // rather than the previous record in this pack.
+                steps.push(AuditStep {
+                    target: "records[0].beforeHash".to_string(),
+                    kind: AuditStepKind::ChainLink,
+                    status: AuditStepStatus::Invalid,
+                    reason: Some(AuditReasonCode::ChainLinkMismatch),
+                    message: "first record's beforeHash does not equal the supplied priorAfterHash — cross-pack continuity is broken.".to_string(),
+                    detail: Some(serde_json::json!({
+                        "expected": expected,
+                        "actual": first.before_hash,
+                    })),
+                });
+            }
+        }
     } else {
         steps.push(valid_step(
             "records[0].beforeHash",
-            "genesis record has null beforeHash, as expected",
+            if prior_after_hash.is_none() {
+                "genesis record has null beforeHash, as expected"
+            } else {
+                "first record's beforeHash matches the supplied priorAfterHash"
+            },
         ));
     }
 
