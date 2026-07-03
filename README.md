@@ -162,6 +162,34 @@ fn main() {
 }
 ```
 
+## Getting the platform keys
+
+The crate is deliberately offline — it never makes HTTP calls. Fetch
+the platform's signing-key directory yourself and feed it in. UNTIL
+THE APRIL 2027 LAUNCH the live endpoint is the sandbox
+(`api.enfinitos.com` is not live yet):
+
+```sh
+# Today (sandbox). At launch: https://api.enfinitos.com/v1/runtime-keys
+curl -s https://sandbox.api.enfinitos.com/v1/runtime-keys > runtime-keys.json
+```
+
+The response is the platform's `{ ok, data: { keys, issuedAt } }`
+envelope — parse it with the built-in helper instead of unwrapping by
+hand:
+
+```rust
+use std::fs;
+use enfinitos_auditor::KeyDirectory;
+
+let json = fs::read_to_string("./runtime-keys.json").unwrap();
+let directory = KeyDirectory::from_runtime_keys_json(&json).unwrap();
+```
+
+For the regulator path (keys pinned out-of-band, fully air-gapped),
+use `KeyDirectory::from_local(keys)` with a `Vec<VerificationKey>` as
+in the five-minute example above.
+
 ## Architecture
 
 ```
